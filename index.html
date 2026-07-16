@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Churnboard — merchant risk triage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12171c;
+    --paper:#eceae4;
+    --card:#f7f6f3;
+    --rule:#cfccc4;
+    --muted:#6d6f72;
+    --critical:#a32b1e;
+    --atrisk:#b8631a;
+    --watch:#4f6b52;
+    --healthy:#8d9098;
+    --focus:#1f4ba8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:32px 24px 80px}
+
+  /* ---- masthead ---- */
+  header{border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:8px}
+  .masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+  h1{
+    font-family:'Instrument Serif',Georgia,serif;
+    font-size:52px;font-weight:400;line-height:.95;letter-spacing:-.01em;
+  }
+  h1 em{font-style:italic;color:var(--critical)}
+  .sub{font-size:13px;color:var(--muted);max-width:38ch;padding-bottom:6px}
+  .stamp{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--muted);padding-bottom:8px;text-align:right;
+  }
+
+  /* ---- summary rail ---- */
+  .rail{display:flex;gap:0;border-bottom:1px solid var(--rule);margin-bottom:28px;flex-wrap:wrap}
+  .rail button{
+    flex:1;min-width:120px;background:none;border:none;border-right:1px solid var(--rule);
+    padding:14px 12px;text-align:left;cursor:pointer;font-family:inherit;
+    border-bottom:3px solid transparent;transition:background .12s;
+  }
+  .rail button:last-child{border-right:none}
+  .rail button:hover{background:var(--card)}
+  .rail button[aria-pressed="true"]{border-bottom-color:var(--ink);background:var(--card)}
+  .rail .n{font-family:'Instrument Serif',serif;font-size:30px;line-height:1;display:block}
+  .rail .l{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-top:5px;display:block}
+  .rail .c-critical .n{color:var(--critical)}
+  .rail .c-atrisk .n{color:var(--atrisk)}
+  .rail .c-watch .n{color:var(--watch)}
+  .rail .c-healthy .n{color:var(--healthy)}
+
+  /* ---- toolbar ---- */
+  .toolbar{display:flex;gap:16px;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap}
+  .sortgrp{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  select,.btn{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+    background:var(--card);border:1px solid var(--rule);color:var(--ink);
+    padding:7px 10px;border-radius:2px;cursor:pointer;
+  }
+  .btn:hover{background:#e4e2db}
+
+  /* ---- merchant row ---- */
+  .row{
+    background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--rule);
+    margin-bottom:10px;
+  }
+  .row.critical{border-left-color:var(--critical)}
+  .row.atrisk{border-left-color:var(--atrisk)}
+  .row.watch{border-left-color:var(--watch)}
+  .row.healthy{border-left-color:var(--healthy)}
+  .row.done{opacity:.42}
+
+  .rowhead{
+    display:grid;grid-template-columns:1fr auto auto;gap:18px;align-items:center;
+    padding:14px 16px;cursor:pointer;
+  }
+  .rowhead:hover{background:#f1efeb}
+  .idblock{min-width:0}
+  .mname{font-weight:600;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px}
+  .tag{
+    font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.07em;
+    border:1px solid var(--rule);padding:2px 5px;border-radius:2px;color:var(--muted);font-weight:400;
+  }
+  .tag.new{border-color:var(--focus);color:var(--focus)}
+
+  .scoreblock{text-align:right;font-family:'IBM Plex Mono',monospace}
+  .score{font-family:'Instrument Serif',serif;font-size:32px;line-height:1}
+  .row.critical .score{color:var(--critical)}
+  .row.atrisk .score{color:var(--atrisk)}
+  .row.watch .score{color:var(--watch)}
+  .row.healthy .score{color:var(--healthy)}
+  .band{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-top:2px}
+  .chev{font-family:monospace;color:var(--muted);font-size:11px;transition:transform .15s}
+  .row.open .chev{transform:rotate(90deg)}
+
+  /* ---- action strip ---- */
+  .action{
+    border-top:1px dashed var(--rule);padding:12px 16px;
+    display:flex;gap:14px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;
+  }
+  .actiontext{max-width:62ch}
+  .actionlabel{font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:3px}
+  .actionbody{font-size:14px}
+  .actionbody b{font-weight:600}
+  .because{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
+  .acts{display:flex;gap:6px;flex-shrink:0}
+
+  /* ---- detail ---- */
+  .detail{display:none;border-top:1px solid var(--rule);padding:16px;background:#fbfaf8}
+  .row.open .detail{display:block}
+  .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2px;background:var(--rule);border:1px solid var(--rule)}
+  .cell{background:#fbfaf8;padding:9px 11px}
+  .cell .k{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .cell .v{font-family:'IBM Plex Mono',monospace;font-size:14px;margin-top:2px;display:flex;align-items:baseline;gap:7px}
+  .pts{font-size:10px;color:var(--critical);font-weight:500}
+  .pts.zero{color:var(--healthy)}
+  .pts.supp{color:var(--focus)}
+  .breakdown{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);line-height:1.7}
+  .breakdown strong{color:var(--ink)}
+
+  .note{
+    font-size:12px;color:var(--muted);margin-top:36px;padding-top:16px;
+    border-top:1px solid var(--rule);line-height:1.7;
+  }
+  .note code{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--card);padding:1px 4px}
+  .empty{padding:48px 16px;text-align:center;color:var(--muted);border:1px dashed var(--rule)}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (max-width:640px){
+    h1{font-size:38px}
+    .rowhead{grid-template-columns:1fr auto;gap:10px}
+    .chev{display:none}
+    .stamp{text-align:left}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="masthead">
+    <div>
+      <h1>Churn<em>board</em></h1>
+      <p class="sub">Twelve merchants. Ranked by how likely they are to leave, and what to do about it before they do.</p>
+    </div>
+    <div class="stamp">
+      Book of business — R. Iyer<br>
+      Scored <span id="stamp-date"></span><br>
+      <span id="stamp-store"></span>
+    </div>
+  </div>
+</header>
+
+<nav class="rail" id="rail" aria-label="Filter by risk band"></nav>
+
+<div class="toolbar">
+  <div class="sortgrp">
+    <label for="sort">Sort</label>
+    <select id="sort">
+      <option value="score">Risk score</option>
+      <option value="revenue">Revenue at risk</option>
+      <option value="name">Merchant name</option>
+    </select>
+  </div>
+  <div class="sortgrp">
+    <button class="btn" id="reset">Reset to seed data</button>
+  </div>
+</div>
+
+<main id="list"></main>
+
+<p class="note" id="note"></p>
+
+</div>
+
+<script>
+/* ============================================================
+   SEED DATA — hand-built archetypes, not random.
+   Each merchant exists to exercise a specific scoring path.
+   ============================================================ */
+const SEED = [
+  { id:"m_001", name:"Kettle & Vine", segment:"SMB", mrr:480, tenureMonths:14, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.42, loginsLast30d:2, loginsPrior30d:19, supportTicketsOpen:1, ticketsUnresolved14d:0,
+              lastCsatScore:3, daysSinceLastContact:61, failedPaymentsLast90d:0, featureAdoptionPct:0.55 } },
+
+  { id:"m_002", name:"Northgate Supply Co.", segment:"Mid-Market", mrr:3100, tenureMonths:31, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.08, loginsLast30d:14, loginsPrior30d:16, supportTicketsOpen:4, ticketsUnresolved14d:3,
+              lastCsatScore:2, daysSinceLastContact:9, failedPaymentsLast90d:0, featureAdoptionPct:0.80 } },
+
+  { id:"m_003", name:"Halcyon Studios", segment:"Enterprise", mrr:12400, tenureMonths:44, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.37, loginsLast30d:31, loginsPrior30d:36, supportTicketsOpen:0, ticketsUnresolved14d:0,
+              lastCsatScore:4, daysSinceLastContact:21, failedPaymentsLast90d:0, featureAdoptionPct:0.72 } },
+
+  // Edge case 1: brand-new merchant. Deltas are noise. Must not rank Critical.
+  { id:"m_004", name:"Fenwick Ferments", segment:"SMB", mrr:220, tenureMonths:1, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.66, loginsLast30d:5, loginsPrior30d:22, supportTicketsOpen:1, ticketsUnresolved14d:0,
+              lastCsatScore:null, daysSinceLastContact:4, failedPaymentsLast90d:0, featureAdoptionPct:0.20 } },
+
+  // Edge case 2: never surveyed. null CSAT must not read as a 0.
+  { id:"m_005", name:"Bramble & Co.", segment:"SMB", mrr:390, tenureMonths:8, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:0.04, loginsLast30d:11, loginsPrior30d:10, supportTicketsOpen:0, ticketsUnresolved14d:0,
+              lastCsatScore:null, daysSinceLastContact:34, failedPaymentsLast90d:0, featureAdoptionPct:0.60 } },
+
+  // Edge case 3: zero volume both periods. Delta is undefined, not "stable".
+  { id:"m_006", name:"Orrery Goods", segment:"SMB", mrr:180, tenureMonths:19, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:null, txnVolume30d:0, txnVolumePrior30d:0, loginsLast30d:0, loginsPrior30d:3,
+              supportTicketsOpen:0, ticketsUnresolved14d:0, lastCsatScore:null, daysSinceLastContact:88,
+              failedPaymentsLast90d:0, featureAdoptionPct:0.10 } },
+
+  // Edge case 4: cancelled. Must not appear in a risk queue at all.
+  { id:"m_007", name:"Pell & Daughter", segment:"Mid-Market", mrr:0, tenureMonths:26, csmOwner:"R. Iyer", lifecycle:"cancelled",
+    signals:{ txnVolumeDelta30d:-1.0, loginsLast30d:0, loginsPrior30d:12, supportTicketsOpen:0, ticketsUnresolved14d:0,
+              lastCsatScore:1, daysSinceLastContact:120, failedPaymentsLast90d:3, featureAdoptionPct:0.30 } },
+
+  // Edge case 6: seven mild yellows, zero reds. Should NOT outrank a single red.
+  { id:"m_008", name:"Marrow Lane Bakery", segment:"SMB", mrr:640, tenureMonths:22, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.14, loginsLast30d:7, loginsPrior30d:10, supportTicketsOpen:2, ticketsUnresolved14d:1,
+              lastCsatScore:3, daysSinceLastContact:41, failedPaymentsLast90d:1, featureAdoptionPct:0.42 } },
+
+  { id:"m_009", name:"Verity Textiles", segment:"Mid-Market", mrr:2750, tenureMonths:17, csmOwner:"R. Iyer", lifecycle:"dunning",
+    signals:{ txnVolumeDelta30d:-0.05, loginsLast30d:20, loginsPrior30d:21, supportTicketsOpen:1, ticketsUnresolved14d:0,
+              lastCsatScore:4, daysSinceLastContact:16, failedPaymentsLast90d:3, featureAdoptionPct:0.75 } },
+
+  { id:"m_010", name:"Aster Provisions", segment:"SMB", mrr:520, tenureMonths:29, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:0.11, loginsLast30d:18, loginsPrior30d:17, supportTicketsOpen:0, ticketsUnresolved14d:0,
+              lastCsatScore:5, daysSinceLastContact:12, failedPaymentsLast90d:0, featureAdoptionPct:0.85 } },
+
+  { id:"m_011", name:"Cobalt Freight", segment:"Enterprise", mrr:9800, tenureMonths:38, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.29, loginsLast30d:4, loginsPrior30d:27, supportTicketsOpen:2, ticketsUnresolved14d:2,
+              lastCsatScore:2, daysSinceLastContact:52, failedPaymentsLast90d:0, featureAdoptionPct:0.35 } },
+
+  { id:"m_012", name:"Thistledown Home", segment:"SMB", mrr:310, tenureMonths:6, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.02, loginsLast30d:9, loginsPrior30d:8, supportTicketsOpen:1, ticketsUnresolved14d:0,
+              lastCsatScore:4, daysSinceLastContact:27, failedPaymentsLast90d:0, featureAdoptionPct:0.30 } },
+
+  // Edge case 6, properly exercised. Marrow Lane scored 35 naturally, so the cap
+  // never fired and the test passed for the wrong reason. This merchant is every
+  // signal mildly bad and nothing severe: it sums past 40 and must be pulled back.
+  { id:"m_013", name:"Quill & Sundry", segment:"SMB", mrr:410, tenureMonths:24, csmOwner:"R. Iyer", lifecycle:"active",
+    signals:{ txnVolumeDelta30d:-0.18, loginsLast30d:7, loginsPrior30d:10, supportTicketsOpen:2, ticketsUnresolved14d:1,
+              lastCsatScore:3, daysSinceLastContact:95, failedPaymentsLast90d:1, featureAdoptionPct:0.22 } },
+];
+
+/* ============================================================
+   SCORING
+   Weights sum to 100. Every factor returns {pts, note, suppressed}
+   so the UI can always explain the number back to the CSM.
+   ============================================================ */
+const NEW_MERCHANT_MONTHS = 2;
+
+function scoreMerchant(m){
+  const s = m.signals;
+  const isNew = m.tenureMonths < NEW_MERCHANT_MONTHS;
+  const f = [];
+
+  // --- Volume drop (30) ---
+  // Edge 3: null delta = no volume in either period. Undefined, not stable.
+  // Treated as a dormancy signal at partial weight, flagged as inferred.
+  if (s.txnVolumeDelta30d === null) {
+    f.push({ key:"Transaction volume", val:"no volume, both periods", pts:19, weight:25,
+             note:"No baseline to compare. Scored as dormant, not stable." });
+  } else if (isNew) {
+    // Edge 1: no prior period worth comparing against.
+    f.push({ key:"Transaction volume", val:pct(s.txnVolumeDelta30d), pts:0, weight:25, suppressed:true,
+             note:"Suppressed — merchant is "+m.tenureMonths+" month old. No baseline." });
+  } else {
+    const d = s.txnVolumeDelta30d;
+    let p = 0;
+    if (d <= -0.40) p = 25; else if (d <= -0.25) p = 18; else if (d <= -0.10) p = 8; else p = 0;
+    f.push({ key:"Transaction volume", val:pct(d), pts:p, weight:25 });
+  }
+
+  // --- Login decay (15) ---
+  if (isNew) {
+    f.push({ key:"Login activity", val:s.loginsLast30d+" vs "+s.loginsPrior30d, pts:0, weight:15, suppressed:true,
+             note:"Suppressed — onboarding period, activity is erratic by nature." });
+  } else {
+    const prior = s.loginsPrior30d;
+    const drop = prior > 0 ? (prior - s.loginsLast30d) / prior : (s.loginsLast30d === 0 ? 1 : 0);
+    let p = 0;
+    if (drop >= 0.75) p = 15; else if (drop >= 0.50) p = 10; else if (drop >= 0.25) p = 5; else p = 0;
+    f.push({ key:"Login activity", val:s.loginsLast30d+" vs "+prior+" prior", pts:p, weight:15 });
+  }
+
+  // --- Unresolved tickets (25) — the one that's our fault ---
+  // Reweighted up from 15. v1 assumed churn is a revenue event, so relationship
+  // damage couldn't reach Critical even when maxed. A merchant with tickets
+  // rotting past two weeks is the most legible churn signal we have.
+  const u = s.ticketsUnresolved14d;
+  f.push({ key:"Tickets open >14d", val:String(u), pts: u>=3?25 : u===2?18 : u===1?8 : 0, weight:25 });
+
+  // --- CSAT (20) ---
+  // Edge 2: null means never surveyed. Absence of data is not dissatisfaction.
+  if (s.lastCsatScore === null) {
+    f.push({ key:"Last CSAT", val:"never surveyed", pts:0, weight:20, suppressed:true,
+             note:"No score on file. Not counted — absence of data isn't a bad score." });
+  } else {
+    const c = s.lastCsatScore;
+    f.push({ key:"Last CSAT", val:c+"/5", pts: c<=1?20 : c===2?16 : c===3?6 : 0, weight:20 });
+  }
+
+  // --- Failed payments (15) ---
+  const fp = s.failedPaymentsLast90d;
+  f.push({ key:"Failed payments 90d", val:String(fp), pts: fp>=3?15 : fp===2?9 : fp===1?4 : 0, weight:15 });
+
+  // --- Neglect (5) ---
+  const dc = s.daysSinceLastContact;
+  f.push({ key:"Days since contact", val:String(dc), pts: dc>=90?5 : dc>=60?4 : dc>=30?2 : 0, weight:5 });
+
+  // --- Adoption (5) ---
+  const a = s.featureAdoptionPct;
+  f.push({ key:"Feature adoption", val:pct2(a), pts: a<=0.25?5 : a<=0.45?3 : 0, weight:5 });
+
+  let raw = f.reduce((t,x)=>t+x.pts,0);
+
+  /* Edge 6 — the "death by yellow" correction.
+     Additive scoring lets a merchant with many mild flags outrank a merchant
+     with one severe one. Severity is what predicts churn, not flag count.
+     If nothing scored at/above 70% of its own weight, cap the total at the
+     top of the Watch band. Many small annoyances are not an emergency. */
+  const hasSevere = f.some(x => !x.suppressed && x.weight >= 10 && x.pts >= x.weight * 0.7);
+  let capped = false;
+  if (!hasSevere && raw > 39) { raw = 39; capped = true; }
+
+  /* Dunning floor. Verity Textiles scored 10 — Healthy — while actively in
+     dunning with 3 failed payments, because every behavioural signal was fine.
+     They are fine. Their card is not. A merchant whose payments are failing is
+     never healthy regardless of how happily they're using the product, so
+     lifecycle sets a floor the behavioural score can only exceed, never undercut. */
+  let floored = false;
+  if (m.lifecycle === "dunning" && raw < 40) { raw = 40; floored = true; capped = false; }
+
+  const score = Math.min(100, Math.round(raw));
+
+  // Dominant signal = highest scoring factor. Drives the ACTION, not the score.
+  const scoring = f.filter(x=>x.pts>0).sort((a,b)=>b.pts-a.pts);
+  const dominant = scoring.length ? scoring[0].key : null;
+
+  return { score, band:bandOf(score), factors:f, dominant, isNew, capped, floored, hasSevere };
+}
+
+function bandOf(s){ return s>=70?"critical" : s>=40?"atrisk" : s>=20?"watch" : "healthy"; }
+const BAND_LABEL = { critical:"Critical", atrisk:"At risk", watch:"Watch", healthy:"Healthy" };
+const pct  = v => v===null ? "—" : (v>0?"+":"")+Math.round(v*100)+"%";
+const pct2 = v => Math.round(v*100)+"%";
+
+/* ============================================================
+   NEXT STEP — derived from the dominant signal, never the score.
+   Score = urgency. Dominant signal = what you actually do.
+   ============================================================ */
+function nextStep(m, r){
+  const s = m.signals;
+
+  if (m.lifecycle === "cancelled")
+    return { do:"No action — account is closed.", owner:"—", when:"—",
+             why:"Cancelled accounts aren't churn risk. They're churn." };
+
+  if (r.isNew)
+    return { do:"Onboarding check-in. Confirm they've processed a first live transaction.",
+             owner:"Onboarding", when:"This week",
+             why:"Tenure is "+m.tenureMonths+" month — the decline signals have no baseline and are being suppressed. Judge this account on activation, not trend." };
+
+  if (m.lifecycle === "dunning" || r.dominant === "Failed payments 90d")
+    return { do:"Billing outreach — confirm card on file before the next retry.",
+             owner:"Billing", when:"Within 24h",
+             why:"This is a payment failure, not a relationship problem. A CX call here reads as tone-deaf." };
+
+  if (r.dominant === "Tickets open >14d")
+    return { do:"Escalate the open tickets internally first. Call only once you have a resolution date.",
+             owner:"Support lead → CSM", when:"Escalate today, call within 48h",
+             why:"We're the cause here. Calling to ask how they're doing while "+s.ticketsUnresolved14d+" tickets rot makes it worse." };
+
+  if (r.dominant === "Transaction volume" && s.txnVolumeDelta30d === null)
+    return { do:"Dormancy call. Confirm whether the business is still trading.",
+             owner:"CSM", when:"This week",
+             why:"Zero volume in both periods. This account isn't declining — it's already stopped." };
+
+  if (r.dominant === "Transaction volume")
+    return { do:"Book a revenue review. Lead with \"what changed?\", not with our roadmap.",
+             owner:"CSM", when:"Within 5 days",
+             why:"Volume is down "+pct(s.txnVolumeDelta30d)+". Either their business is struggling or ours is losing share of it. Both need a real conversation." };
+
+  if (r.dominant === "Last CSAT")
+    return { do:"CSM-led call. Acknowledge the score. No upsell, no roadmap.",
+             owner:"CSM", when:"Within 48h",
+             why:"They told us they're unhappy ("+s.lastCsatScore+"/5) and we're still selling. Fix the relationship first." };
+
+  if (r.dominant === "Login activity")
+    return { do:"Re-onboarding session with whoever uses this daily — not the signer.",
+             owner:"CSM + Solutions", when:"Within 10 days",
+             why:"Logins fell from "+s.loginsPrior30d+" to "+s.loginsLast30d+". Disengagement leads volume decline by about a quarter." };
+
+  if (r.dominant === "Feature adoption")
+    return { do:"Send the two workflows they haven't turned on. One email, no deck.",
+             owner:"CSM", when:"Within 2 weeks",
+             why:"Adoption is "+pct2(s.featureAdoptionPct)+". Low adoption means low switching cost — they can leave on a Tuesday." };
+
+  if (r.dominant === "Days since contact")
+    return { do:"Schedule a check-in.", owner:"CSM", when:"Within 2 weeks",
+             why:"Nothing is broken. But "+s.daysSinceLastContact+" days of silence is a measure of us, not them." };
+
+  return { do:"No action needed. Leave them alone.", owner:"—", when:"—",
+           why:"Healthy across every signal. The best thing you can do for this account is nothing." };
+}
+
+/* ============================================================
+   PERSISTENCE
+   localStorage, with an in-memory fallback — some hosts sandbox it.
+   Spec §5 flagged this; it needs to fail soft, not blank the page.
+   ============================================================ */
+const KEY = "churnboard.v1";
+let memoryStore = null, storageWorks = true;
+try { localStorage.setItem(KEY+".probe","1"); localStorage.removeItem(KEY+".probe"); }
+catch(e){ storageWorks = false; }
+
+function loadState(){
+  if (!storageWorks) return memoryStore || (memoryStore = {});
+  try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e){ return {}; }
+}
+function saveState(st){
+  if (!storageWorks) { memoryStore = st; return; }
+  try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e){ storageWorks=false; memoryStore=st; renderStamp(); }
+}
+
+let state = loadState();          // { [id]: {status:'contacted'|'snoozed'} }
+let filter = "all";
+let sortBy = "score";
+let openRows = new Set();
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function computed(){
+  return SEED.map(m => {
+    const r = scoreMerchant(m);
+    return { m, r, step: nextStep(m, r), status: (state[m.id]||{}).status || null };
+  });
+}
+
+function renderRail(rows){
+  // Edge 4: cancelled accounts are excluded from the queue entirely.
+  const live = rows.filter(x => x.m.lifecycle !== "cancelled");
+  const counts = { critical:0, atrisk:0, watch:0, healthy:0 };
+  live.forEach(x => counts[x.r.band]++);
+  const items = [
+    ["all", live.length, "In queue", ""],
+    ["critical", counts.critical, "Critical", "c-critical"],
+    ["atrisk", counts.atrisk, "At risk", "c-atrisk"],
+    ["watch", counts.watch, "Watch", "c-watch"],
+    ["healthy", counts.healthy, "Healthy", "c-healthy"],
+  ];
+  document.getElementById("rail").innerHTML = items.map(([k,n,l,c]) =>
+    `<button class="${c}" data-f="${k}" aria-pressed="${filter===k}">
+       <span class="n">${n}</span><span class="l">${l}</span>
+     </button>`).join("");
+  document.querySelectorAll("#rail button").forEach(b =>
+    b.onclick = () => { filter = b.dataset.f; render(); });
+}
+
+function render(){
+  const all = computed();
+  renderRail(all);
+
+  let rows = all.filter(x => x.m.lifecycle !== "cancelled");
+  if (filter !== "all") rows = rows.filter(x => x.r.band === filter);
+
+  if (sortBy === "score")        rows.sort((a,b) => b.r.score - a.r.score || b.m.mrr - a.m.mrr);
+  else if (sortBy === "revenue") rows.sort((a,b) => (b.m.mrr * b.r.score) - (a.m.mrr * a.r.score));
+  else                           rows.sort((a,b) => a.m.name.localeCompare(b.m.name));
+
+  // Contacted accounts sink to the bottom regardless of sort.
+  rows.sort((a,b) => (a.status?1:0) - (b.status?1:0));
+
+  const list = document.getElementById("list");
+  if (!rows.length){ list.innerHTML = `<div class="empty">Nothing in this band. Try another filter.</div>`; return; }
+
+  list.innerHTML = rows.map(({m,r,step,status}) => {
+    const open = openRows.has(m.id);
+    return `
+    <article class="row ${r.band} ${open?"open":""} ${status?"done":""}">
+      <div class="rowhead" role="button" tabindex="0" data-t="${m.id}" aria-expanded="${open}">
+        <div class="idblock">
+          <div class="mname">
+            ${m.name}
+            ${r.isNew ? '<span class="tag new">New — deltas suppressed</span>' : ''}
+            ${m.lifecycle==="dunning" ? '<span class="tag">Dunning</span>' : ''}
+            ${status ? `<span class="tag">${status}</span>` : ''}
+          </div>
+          <div class="meta">${m.segment} · $${m.mrr.toLocaleString()}/mo · ${m.tenureMonths}mo · ${m.csmOwner}</div>
+        </div>
+        <div class="scoreblock">
+          <div class="score">${r.score}</div>
+          <div class="band">${BAND_LABEL[r.band]}</div>
+        </div>
+        <div class="chev">▸</div>
+      </div>
+
+      <div class="action">
+        <div class="actiontext">
+          <div class="actionlabel">Next step — ${step.owner} · ${step.when}</div>
+          <div class="actionbody"><b>${step.do}</b></div>
+          <div class="because">${step.why}</div>
+        </div>
+        <div class="acts">
+          ${status
+            ? `<button class="btn" data-undo="${m.id}">Undo</button>`
+            : `<button class="btn" data-done="${m.id}">Mark contacted</button>
+               <button class="btn" data-snooze="${m.id}">Snooze</button>`}
+        </div>
+      </div>
+
+      <div class="detail">
+        <div class="dgrid">
+          ${r.factors.map(f => `
+            <div class="cell">
+              <div class="k">${f.key}</div>
+              <div class="v">${f.val}
+                <span class="pts ${f.suppressed?'supp':(f.pts?'':'zero')}">${f.suppressed ? "suppressed" : "+"+f.pts}</span>
+              </div>
+              ${f.note ? `<div class="k" style="margin-top:4px;text-transform:none;letter-spacing:0;font-size:10.5px">${f.note}</div>` : ""}
+            </div>`).join("")}
+        </div>
+        <div class="breakdown">
+          Score <strong>${r.score}</strong> of 100 · dominant signal: <strong>${r.dominant || "none"}</strong>
+          ${r.capped ? `<br><strong>Capped at 39.</strong> Several mild flags, no severe one. Held out of At risk on purpose — flag count isn't severity.` : ""}
+          ${r.floored ? `<br><strong>Floored at 40.</strong> Behaviour scores healthy, but the account is in dunning. Failing payments can't render green.` : ""}
+          ${r.isNew ? `<br><strong>New merchant.</strong> Trend factors suppressed; scored on activation instead.` : ""}
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+
+  list.querySelectorAll("[data-t]").forEach(el => {
+    const toggle = () => {
+      const id = el.dataset.t;
+      openRows.has(id) ? openRows.delete(id) : openRows.add(id);
+      render();
+    };
+    el.onclick = toggle;
+    el.onkeydown = e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(); } };
+  });
+  list.querySelectorAll("[data-done]").forEach(b => b.onclick = e => { e.stopPropagation(); setStatus(b.dataset.done,"contacted"); });
+  list.querySelectorAll("[data-snooze]").forEach(b => b.onclick = e => { e.stopPropagation(); setStatus(b.dataset.snooze,"snoozed"); });
+  list.querySelectorAll("[data-undo]").forEach(b => b.onclick = e => { e.stopPropagation(); setStatus(b.dataset.undo,null); });
+
+  renderNote(all);
+}
+
+function setStatus(id, status){
+  if (status) state[id] = { status, at: Date.now() };
+  else delete state[id];
+  saveState(state);
+  render();
+}
+
+function renderStamp(){
+  document.getElementById("stamp-date").textContent =
+    new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+  document.getElementById("stamp-store").textContent =
+    storageWorks ? "Changes saved locally" : "Session only — storage blocked";
+}
+
+function renderNote(all){
+  const cancelled = all.filter(x => x.m.lifecycle === "cancelled").length;
+  document.getElementById("note").innerHTML =
+    `<strong>How the number works.</strong> Weighted additive score out of 100: volume drop 25 ·
+     tickets unresolved past 14 days 25 · CSAT 20 · login decay 15 · failed payments 15 · neglect 5 · adoption 5.
+     Open any merchant to see every factor and what it contributed.
+     The score sets <em>urgency</em>; the dominant signal sets the <em>action</em> — two accounts at 80 get different calls.
+     <br><br>
+     <strong>Five deliberate exceptions.</strong>
+     Merchants under 2 months have their trend factors suppressed — a 60% drop from a two-week baseline is noise, not churn.
+     A missing CSAT scores 0, not 20; never surveyed isn't the same as unhappy.
+     Zero volume across both periods scores as dormant rather than stable, because <code>0 → 0</code> isn't flat, it's stopped.
+     A merchant with many mild flags but no severe one is capped at 39 — churn comes from severity, not flag count.
+     And an account in dunning is floored at 40: the merchant may be perfectly happy, but a card that keeps failing isn't healthy.
+     <br><br>
+     ${cancelled} cancelled account${cancelled===1?" is":"s are"} hidden. Risk is a future-tense idea; they've already left.`;
+}
+
+document.getElementById("sort").onchange = e => { sortBy = e.target.value; render(); };
+document.getElementById("reset").onclick = () => {
+  state = {}; openRows.clear(); saveState(state); render();
+};
+
+renderStamp();
+render();
+</script>
+</body>
+</html>
